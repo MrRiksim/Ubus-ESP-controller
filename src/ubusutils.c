@@ -1,6 +1,8 @@
 #include <libubus.h>
 #include <libubox/blobmsg_json.h>
 
+#include <stdio.h>
+
 #include "error_handler.h"
 #include "sputils.h"
 #include "types.h"
@@ -52,15 +54,15 @@ static void devices_to_blobmsg(struct blob_buf *b, Device *devices, int count)
 }
 
 int esp_controller_devices(struct ubus_context *ctx, struct ubus_object *obj, 
-                          struct ubus_request_data *req, const char *method, 
-                          struct blob_attr *msg)
+                           struct ubus_request_data *req, const char *method, 
+                           struct blob_attr *msg)
 {
     struct blob_buf b = {0};
     blob_buf_init(&b, 0);
 
-    char err_buf[256];
+    char err_buf[BUF_SIZE];
     Device devices[MAX_DEV];
-    int dev_count = check(get_devices(devices, MAX_DEV), err_buf, 256);
+    int dev_count = check(get_devices(devices, MAX_DEV), err_buf, BUF_SIZE);
     if (dev_count < 0) {
         blobmsg_add_u32(&b, "ret", dev_count);
         blobmsg_add_string(&b, "msg", err_buf);
@@ -79,8 +81,8 @@ int esp_controller_devices(struct ubus_context *ctx, struct ubus_object *obj,
 }
 
 int esp_controller_on(struct ubus_context *ctx, struct ubus_object *obj, 
-                    struct ubus_request_data *req, const char *method, 
-                    struct blob_attr *msg)
+                      struct ubus_request_data *req, const char *method, 
+                      struct blob_attr *msg)
 {
     struct blob_attr *tb[__ON_OFF_MAX];
     struct blob_buf b = {0};
@@ -92,19 +94,18 @@ int esp_controller_on(struct ubus_context *ctx, struct ubus_object *obj,
     char *port = blobmsg_get_string(tb[ON_OFF_PORT]);
     int pin = blobmsg_get_u32(tb[ON_OFF_PIN]);
     
-    char err_buf[256];
-    char resp[256];
-    resp[0] = '\0';
+    char err_buf[BUF_SIZE];
+    Response resp;
 
     blob_buf_init(&b, 0);
 
-    int ret = check(send_on_action(port, pin, resp, 256), err_buf, 256);
+    int ret = check(send_on_action(port, pin, &resp), err_buf, BUF_SIZE);
 
     blobmsg_add_u32(&b, "ret", ret);
     if (ret && err_buf[0] != '\0')
         blobmsg_add_string(&b, "msg", err_buf);
     else
-        blobmsg_add_string(&b, "msg", resp);
+        blobmsg_add_string(&b, "msg", resp.msg);
     ubus_send_reply(ctx, req, b.head);
     
     blob_buf_free(&b);
@@ -112,8 +113,8 @@ int esp_controller_on(struct ubus_context *ctx, struct ubus_object *obj,
 }
 
 int esp_controller_off(struct ubus_context *ctx, struct ubus_object *obj, 
-                      struct ubus_request_data *req, const char *method, 
-                      struct blob_attr *msg)
+                       struct ubus_request_data *req, const char *method, 
+                       struct blob_attr *msg)
 {
     struct blob_attr *tb[__ON_OFF_MAX];
     struct blob_buf b = {0};
@@ -125,28 +126,41 @@ int esp_controller_off(struct ubus_context *ctx, struct ubus_object *obj,
     char *port = blobmsg_get_string(tb[ON_OFF_PORT]);
     int pin = blobmsg_get_u32(tb[ON_OFF_PIN]);
     
-    char err_buf[256];
-    char resp[256];
-    resp[0] = '\0';
+    char err_buf[BUF_SIZE];
+    Response resp;
 
     blob_buf_init(&b, 0);
 
-    int ret = check(send_off_action(port, pin, resp, 256), err_buf, 256);
+    int ret = check(send_off_action(port, pin, &resp), err_buf, BUF_SIZE);
     
     blobmsg_add_u32(&b, "ret", ret);
     if (ret && err_buf[0] != '\0')
         blobmsg_add_string(&b, "msg", err_buf);
     else
-        blobmsg_add_string(&b, "msg", resp);
+        blobmsg_add_string(&b, "msg", resp.msg);
     ubus_send_reply(ctx, req, b.head);
     
     blob_buf_free(&b);
     return 0;
 }
 
+static void data_to_blobmsg(struct blob_buf *b, Response resp)
+{
+    if (!resp.has_data)
+        return;
+    
+    void *obj;
+    obj = blobmsg_open_table(b, "data");
+
+    for (int i = 0; i < resp.data_count; i++)
+        blobmsg_add_double(b, resp.data[i].name, resp.data[i].value);
+
+    blobmsg_close_table(b, obj);
+}
+
 int esp_controller_get(struct ubus_context *ctx, struct ubus_object *obj, 
-                      struct ubus_request_data *req, const char *method, 
-                      struct blob_attr *msg)
+                       struct ubus_request_data *req, const char *method, 
+                       struct blob_attr *msg)
 {
     struct blob_attr *tb[__GET_MAX];
     struct blob_buf b = {0};
@@ -160,19 +174,20 @@ int esp_controller_get(struct ubus_context *ctx, struct ubus_object *obj,
     char *model = blobmsg_get_string(tb[GET_MODEL]);
     char *sensor = blobmsg_get_string(tb[GET_SENSOR]);
     
-    char err_buf[256];
-    char resp[256];
-    resp[0] = '\0';
+    char err_buf[BUF_SIZE];
+    Response resp;
 
     blob_buf_init(&b, 0);
 
-    int ret = check(send_get_action(port, pin, sensor, model, resp, 256), err_buf, 256);
-    
+    int ret = check(send_get_action(port, pin, sensor, model, &resp), err_buf, BUF_SIZE);
+
     blobmsg_add_u32(&b, "ret", ret);
     if (ret && err_buf[0] != '\0')
         blobmsg_add_string(&b, "msg", err_buf);
-    else
-        blobmsg_add_string(&b, "msg", resp);
+    else {
+        blobmsg_add_string(&b, "msg", resp.msg);
+        data_to_blobmsg(&b, resp);
+    }
     ubus_send_reply(ctx, req, b.head);
     
     blob_buf_free(&b);

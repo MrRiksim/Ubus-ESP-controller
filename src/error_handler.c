@@ -40,7 +40,7 @@ int check(int result, char *buffer, size_t size)
         return NODEV_ERR;
 
     case JSONPARSE_ERR:
-        snprintf(buffer, size, "Error: Response JSON parse failed.");
+        snprintf(buffer, size, "Error: Response message JSON parse failed.");
         return JSONPARSE_ERR;
     
     case PORTREAD_ERR:

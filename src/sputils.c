@@ -43,45 +43,6 @@ int get_devices(Device *list, int max_dev)
     return i;
 }
 
-int identify_device(Device *target, int target_vid, int target_pid)
-{
-    struct sp_port **port_list;
-
-    enum sp_return result = sp_list_ports(&port_list);
-    if (result)
-        return result;
-
-    for (int i = 0; port_list[i] != NULL; i++) {
-        struct sp_port *port = port_list[i];
-
-        if (sp_get_port_transport(port) != SP_TRANSPORT_USB)
-            continue;
-
-        int vid;
-        int pid;
-        int ret = sp_get_port_usb_vid_pid(port, &vid, &pid);
-        if (ret)
-            continue;
-
-        if (vid == target_vid && pid == target_pid) {
-            char *port_name = sp_get_port_name(port);
-
-            strncpy((*target).port, port_name, MAX_PORT_LEN);
-            (*target).port[MAX_PORT_LEN - 1] = '\0';
-            (*target).vid = vid;
-            (*target).pid = pid;
-
-            sp_free_port_list(port_list);
-            return 0;
-        }
-    }
-
-    if (port_list != NULL)
-        sp_free_port_list(port_list);
-    
-    return NODEV_ERR;
-}
-
 static int setup_port(struct sp_port *port)
 {
     int ret;
@@ -96,7 +57,7 @@ static int setup_port(struct sp_port *port)
     return 0;
 }
 
-static int parse_json(char *src, char *out, int size)
+static int parse_json(const char *src, Response *resp)
 {
     cJSON *json = cJSON_Parse(src);
     if (!json)
@@ -107,25 +68,41 @@ static int parse_json(char *src, char *out, int size)
         cJSON_Delete(json);
         return JSONPARSE_ERR;
     }
-
-    int rc = rc_item->valueint;
+    resp->rc = rc_item->valueint;
 
     cJSON *msg_item = cJSON_GetObjectItem(json, "msg");
     if (cJSON_IsString(msg_item) && msg_item->valuestring) {
-        strncpy(out, msg_item->valuestring, size - 1);
-        out[size - 1] = '\0';
+        strncpy(resp->msg, msg_item->valuestring, sizeof(resp->msg)-1);
+        resp->msg[sizeof(resp->msg)-1] = '\0';
     } else {
-        out[0] = '\0';
+        resp->msg[0] = '\0';
+    }
+
+    resp->data_count = 0;
+    resp->has_data = 0;
+
+    cJSON *data_item = cJSON_GetObjectItem(json, "data");
+    if (cJSON_IsObject(data_item)) {
+        resp->has_data = 1;
+
+        for (cJSON *child = data_item->child; child != NULL && resp->data_count < MAX_RESP_DATA; child = child->next) {
+            if (child->string && cJSON_IsNumber(child)) {
+                strncpy(resp->data[resp->data_count].name, child->string, MAX_RESP_DATA_NAME_LEN);
+                resp->data[resp->data_count].value = child->valuedouble;
+
+                resp->data_count++;
+            }
+        }
     }
 
     cJSON_Delete(json);
-    return rc;
+    return resp->rc;
 }
 
-static int send_message(char *port_name, char *data, char *resp, int resp_size)
+static int send_message(char *port_name, char *data, Response *resp)
 {
     struct sp_port *port;
-    char resp_json[resp_size];
+    char resp_json[BUF_SIZE];
     int size = strlen(data);
     unsigned int timeout = 3000;
 
@@ -147,7 +124,7 @@ static int send_message(char *port_name, char *data, char *resp, int resp_size)
 
     sp_flush(port, SP_BUF_INPUT);
 
-    ret = sp_blocking_read(port, resp_json, resp_size, timeout);
+    ret = sp_blocking_read(port, resp_json, BUF_SIZE, timeout);
     if (ret < 0) {
         resp_json[0] = '\0';
         goto cleanup;
@@ -157,7 +134,7 @@ static int send_message(char *port_name, char *data, char *resp, int resp_size)
         goto cleanup;
     }
     resp_json[ret] = '\0';
-    ret = parse_json(resp_json, resp, resp_size);
+    ret = parse_json(resp_json, resp);
     if (ret)
         goto cleanup;
 
@@ -170,26 +147,28 @@ cleanup:
     return ret;
 }
 
-int send_on_action(char *port, int pin, char *resp, int resp_size)
+int send_on_action(char *port, int pin, Response *resp)
 {
     char params[64];
     snprintf(params, sizeof(params), "{\"pin\": %d, \"action\": \"on\"}", pin);
 
-    return send_message(port, params, resp, resp_size);
+    return send_message(port, params, resp);
 }
 
-int send_off_action(char *port, int pin, char *resp, int resp_size)
+int send_off_action(char *port, int pin, Response *resp)
 {
     char params[64];
     snprintf(params, sizeof(params), "{\"pin\": %d, \"action\": \"off\"}", pin);
 
-    return send_message(port, params, resp, resp_size);
+    return send_message(port, params, resp);
 }
 
-int send_get_action(char *port, int pin, const char *sensor, const char *model, char *resp, int resp_size)
+int send_get_action(char *port, int pin, const char *sensor, const char *model, Response *resp)
 {
     char params[128];
-    snprintf(params, sizeof(params), "{\"action\": \"get\", \"sensor\": \"%s\", \"pin\": %d, \"model\": \"%s\"}", sensor, pin, model);
+    snprintf(params, sizeof(params), 
+            "{\"action\": \"get\", \"sensor\": \"%s\", \"pin\": %d, \"model\": \"%s\"}", 
+            sensor, pin, model);
 
-    return send_message(port, params, resp, resp_size);
+    return send_message(port, params, resp);
 }

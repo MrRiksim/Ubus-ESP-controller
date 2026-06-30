@@ -1,17 +1,7 @@
-#include <libserialport.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <libubus.h>
 
-#include "types.h"
-#include "sputils.h"
-#include "error_handler.h"
 #include "ubusutils.h"
-
-#define TARGET_VID 4292
-#define TARGET_PID 60000
 
 int main()
 {

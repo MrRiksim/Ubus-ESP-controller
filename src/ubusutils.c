@@ -1,8 +1,6 @@
 #include <libubus.h>
 #include <libubox/blobmsg_json.h>
 
-#include <stdio.h>
-
 #include "error_handler.h"
 #include "sputils.h"
 #include "types.h"

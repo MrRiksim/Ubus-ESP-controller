@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <libserialport.h>
-#include <string.h>
 
 #include "error_handler.h"
 

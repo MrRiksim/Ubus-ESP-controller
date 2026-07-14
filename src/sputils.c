@@ -1,10 +1,43 @@
 #include <libserialport.h>
 #include <string.h>
 #include <stdio.h>
+#include <cjson/cJSON.h>
 
 #include "sputils.h"
 #include "error_handler.h"
-#include "cJSON.h"
+
+static int is_possible_esp_board(struct sp_port *port)
+{
+    int vid, pid;
+
+    if (port == NULL)
+        return 0;
+
+    if (sp_get_port_usb_vid_pid(port, &vid, &pid) != SP_OK)
+        return 0;
+
+    switch (vid)
+    {
+        /* Espressif native USB */
+        case 0x303A:
+            return 1;
+
+        /* Silicon Labs CP210x */
+        case 0x10C4:
+            return 1;
+
+        /* QinHeng / WCH CH340, CH9102 */
+        // case 0x1A86:
+        //     return 1;
+
+        /* FTDI FT232 */
+        // case 0x0403:
+        //     return 1;
+
+        default:
+            return 0;
+    }
+}
 
 int get_devices(Device *list, int max_dev)
 {
@@ -15,31 +48,29 @@ int get_devices(Device *list, int max_dev)
         return result;
 
     int i;
+    int count = 0;
     for (i = 0; port_list[i] != NULL; i++) {
         struct sp_port *port = port_list[i];
+        if (!is_possible_esp_board(port))
+            continue;
         Device temp;
 
+        int vid, pid;
+        sp_get_port_usb_vid_pid(port, &vid, &pid);
         char *port_name = sp_get_port_name(port);
-        int vid;
-        int pid;
-        int ret = sp_get_port_usb_vid_pid(port, &vid, &pid);
 
         strncpy(temp.port, port_name, MAX_PORT_LEN);
         temp.port[MAX_PORT_LEN - 1] = '\0';
-        if (!ret) {
-            temp.vid = vid;
-            temp.pid = pid;
-        } else {
-            temp.vid = -1;
-            temp.pid = -1;
-        }
+        temp.vid = vid;
+        temp.pid = pid;
 
-        list[i] = temp;
+        list[count] = temp;
+        count++;
     }
 
     sp_free_port_list(port_list);
 
-    return i;
+    return count;
 }
 
 static int setup_port(struct sp_port *port)
@@ -56,6 +87,26 @@ static int setup_port(struct sp_port *port)
     return 0;
 }
 
+static int change_error_code(int code)
+{
+    switch (code) {
+        case 101:
+            return ACTION_NOT_VALID;
+        case 102:
+            return PIN_NOT_VALID;
+        case 103:
+            return MODE_NOT_VALID;
+        case 104:
+            return SENSOR_NOT_SUPPORTED;
+        case 105:
+            return SENSOR_RETURNED_NO_DATA;
+        case 106:
+            return MISSING_ARGUMENTS;
+    }
+
+    return code;
+}
+
 static int parse_json(const char *src, Response *resp)
 {
     cJSON *json = cJSON_Parse(src);
@@ -67,7 +118,7 @@ static int parse_json(const char *src, Response *resp)
         cJSON_Delete(json);
         return JSONPARSE_ERR;
     }
-    resp->rc = rc_item->valueint;
+    resp->rc = change_error_code(rc_item->valueint);
 
     cJSON *msg_item = cJSON_GetObjectItem(json, "msg");
     if (cJSON_IsString(msg_item) && msg_item->valuestring) {
@@ -108,6 +159,11 @@ static int send_message(char *port_name, char *data, Response *resp)
     int ret = sp_get_port_by_name(port_name, &port);
     if (ret)
         return ret;
+    
+    if (!is_possible_esp_board(port)) {
+        sp_free_port(port);
+        return UNSUPDEV_ERR;
+    } 
     
     ret = setup_port(port);
     if (ret)

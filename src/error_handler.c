@@ -22,10 +22,6 @@ int check(int result, char *buffer, size_t size)
         sp_free_error_message(error_message);
         return SPFAIL_ERR;
 
-    case SPSUPP_ERR:
-        snprintf(buffer, size, "Error: Not supported.");
-        return SPSUPP_ERR;
-
     case SPMEM_ERR:
         snprintf(buffer, size, "Error: Couldn't allocate memory.");
         return SPMEM_ERR;
@@ -45,6 +41,10 @@ int check(int result, char *buffer, size_t size)
     case PORTREAD_ERR:
         snprintf(buffer, size, "Error: Port did not respond.");
         return PORTREAD_ERR;
+
+    case UNSUPDEV_ERR:
+        snprintf(buffer, size, "Error: Unsupported device.");
+        return UNSUPDEV_ERR;
 
     default:
         return result;

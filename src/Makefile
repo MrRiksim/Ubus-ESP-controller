@@ -1,5 +1,5 @@
 CFLAGS += -Wall -Werror -pedantic
-LDFLAGS := -lserialport -lubus -lubox -lblobmsg_json
+LDFLAGS := -lserialport -lubus -lubox -lblobmsg_json -lcjson
 
 SRCS = $(wildcard *.c)
 OBJS = $(SRCS:.c=.o)

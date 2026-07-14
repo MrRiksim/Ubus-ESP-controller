@@ -9,7 +9,7 @@ include $(INCLUDE_DIR)/package.mk
 define Package/ubus-esp-controller
 	CATEGORY:=Base system
 	TITLE:=ubus-esp-controller
-	DEPENDS:=+libserialport +libblobmsg-json +libubox +libubus
+	DEPENDS:=+libserialport +libblobmsg-json +libubox +libubus +cJSON
 endef
 
 define Package/ubus-esp-controller/description

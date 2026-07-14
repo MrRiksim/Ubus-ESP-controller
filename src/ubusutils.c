@@ -41,9 +41,16 @@ static void devices_to_blobmsg(struct blob_buf *b, Device *devices, int count)
     for (int i = 0; i < count; i++) {
         void *obj = blobmsg_open_table(b, NULL);
 
+        char vid[16];
+        char pid[16];
+
         blobmsg_add_string(b, "port", devices[i].port);
-        blobmsg_add_u32(b, "vid", devices[i].vid);
-        blobmsg_add_u32(b, "pid", devices[i].pid);
+
+        snprintf(vid, sizeof(vid), "0x%X", devices[i].vid);
+        snprintf(pid, sizeof(pid), "0x%X", devices[i].pid);
+
+        blobmsg_add_string(b, "vid", vid);
+        blobmsg_add_string(b, "pid", pid);
 
         blobmsg_close_table(b, obj);
     }
